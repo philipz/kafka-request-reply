@@ -3,9 +3,9 @@
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <artifactId>spring-kafka-4</artifactId>
-    <name>spring-kafka-4</name>
-    <description>Intro to Kafka with Spring</description>
+    <artifactId>kafka-request-reply-restapi</artifactId>
+    <name>kafka-request-reply-restapi</name>
+    <description>Kafka Request-Reply RestAPI</description>
 
     <parent>
         <groupId>org.springframework.boot</groupId>
@@ -15,12 +15,6 @@
     </parent>
 
     <dependencies>
-
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-actuator</artifactId>
-        </dependency>
-
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -67,9 +61,6 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <mainClass>com.baeldung.deserialization.exception.Application</mainClass>
-                </configuration>
             </plugin>
         </plugins>
     </build>
