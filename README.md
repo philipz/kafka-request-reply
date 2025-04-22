@@ -1,33 +1,88 @@
-## Spring Kafka 同步請求-回應模式
+## Spring Kafka 多步驟請求-回應模式
 
-本模組介紹如何使用 Spring Kafka 實現同步的請求-回應 (Request-Reply) 通訊模式。
+本專案展示如何使用 Spring Kafka 實現一個涉及多個處理階段的同步請求-回應 (Request-Reply) 通訊模式。
 
 ### 核心概念
 
-在典型的非同步消息傳遞中，發送方發送消息後不會等待回應。然而，在某些情境下，我們需要像傳統的同步呼叫一樣，發送請求並立即等待回應。Spring Kafka 提供了 `ReplyingKafkaTemplate` 來實現此同步模式。
+在傳統的同步請求-回應模式中，客戶端發送請求，服務端處理並直接回應。此專案將其擴展，引入了中間處理步驟：
 
-![](img/system.png)
+1.  **REST API (客戶端)**：位於 `restapi` 專案，接收 HTTP 請求。
+2.  **第一階段處理 (`listener`)**：位於 `listener` 專案，監聽初始請求 Topic，執行第一步運算 (例如 `Math.pow`)。
+3.  **第二階段處理 (`listener1`)**：位於 `listener1` 專案，監聽中間結果 Topic，執行第二步運算 (例如 `Math.sqrt`)。
+4.  **回覆**：第二階段處理完成後，將最終結果發送回 REST API 指定的回覆 Topic。
 
-運作方式如下：
+![](img/system.png)  <!-- Assume a new image representing the multi-step flow -->
 
-1. **客戶端 (Client)**：使用 `ReplyingKafkaTemplate` 發送一則請求消息至指定的請求主題 (Request Topic)。該消息會包含一個特殊的標頭 (Header)，通常是 `KafkaHeaders.REPLY_TOPIC`，指定客戶端監聽回應的特定回覆主題 (Reply Topic)。
-2. **等待回應**：客戶端在發送請求後會同步阻塞，等待來自指定回覆主題的回應消息。可以設定超時時間以避免無限期等待。
-3. **服務端 (Server)**：使用 `@KafkaListener` 監聽請求主題。
-4. **處理請求**：服務端接收到請求消息後，進行業務邏輯處理。
-5. **發送回應**：服務端處理完成後，從請求消息的標頭中獲取回覆主題，並使用 `@SendTo` 或直接操作 KafkaTemplate 將回應消息發送至該回覆主題。
-6. **客戶端接收回應**：客戶端從其指定的回覆主題接收到回應消息，解除阻塞，並將結果返回給呼叫者。
+**流程詳述：**
 
-這種模式通常需要為每個客戶端實例配置一個唯一的回覆主題，以確保請求和回應能夠正確匹配。
+1.  **客戶端發送請求**：`restapi` 使用 `ReplyingKafkaTemplate` 發送包含計算參數 (如 base 和 exponent) 的請求消息至 `rest-to-listener.request` Topic。請求消息包含 `KafkaHeaders.REPLY_TOPIC` (指定一個唯一的回覆 Topic) 和 `KafkaHeaders.CORRELATION_ID`。
+2.  **`listener` 處理**：
+    *   `listener` 專案中的 `NotificationDispatchListener` 監聽 `rest-to-listener.request` Topic。
+    *   接收到請求後，執行 `Math.pow` 運算。
+    *   將包含中間結果的 `CalculationResponse` 消息發送至 `listener-to-listener1.intermediate` Topic。**重要**: 此消息會轉發原始請求中的 `REPLY_TOPIC` 和 `CORRELATION_ID` header。
+3.  **`listener1` 處理**：
+    *   `listener1` 專案中的 `NotificationDispatchListener` 監聽 `listener-to-listener1.intermediate` Topic。
+    *   接收到中間結果後，執行 `Math.sqrt` 運算。
+    *   使用 `@SendTo` 將包含最終結果的 `NotificationDispatchResponse` 消息自動發送回消息 header 中指定的 `REPLY_TOPIC`。
+4.  **客戶端接收回應**：`restapi` 在其指定的 Reply Topic 上接收到最終回應，解除阻塞，並將結果透過 HTTP 回傳給原始請求者。
 
-### 相關範例與討論
+**涉及的 Kafka Topics:**
 
-- **範例專案**：
-  - [vxavictor513/spring-kafka-request-reply](https://github.com/vxavictor513/spring-kafka-request-reply): 展示了使用 `ReplyingKafkaTemplate` 和 `AggregatingReplyingKafkaTemplate` 的範例。
-  - [mudiadamz/spring-kafka-request-reply](https://github.com/mudiadamz/spring-kafka-request-reply): 提供了一個使用 `ReplyingKafkaTemplate` 進行同步請求-回應的簡單範例。
-- **技術討論**：
-  - [Stack Overflow: Spring boot Kafka request-reply scenario](https://stackoverflow.com/questions/64109796/spring-boot-kafka-request-reply-scenario): 討論了使用 `ReplyingKafkaTemplate` 相較於 Spring Cloud Stream 實現請求-回應模式的優劣。普遍認為 `ReplyingKafkaTemplate` 更直接適用於此場景。
+*   `rest-to-listener.request`: REST API -> listener
+*   `listener-to-listener1.intermediate`: listener -> listener1
+*   回覆 Topic (動態產生，由 `ReplyingKafkaTemplate` 管理): listener1 -> REST API
 
+**專案結構:**
+
+*   `restapi/`: 包含 REST Controller 和 `ReplyingKafkaTemplate` 的客戶端應用。
+*   `listener/`: 包含第一個 Kafka Listener (`Math.pow`)。
+*   `listener1/`: 包含第二個 Kafka Listener (`Math.sqrt`)。
+
+### 執行
+
+1.  **啟動 Kafka 和 Zookeeper**：可以使用提供的 `docker-compose.yml`。
+    ```bash
+    docker-compose up -d
+    ```
+2.  **設置環境變數** (指向 Kafka Broker)：
+    ```bash
+    export REDPANDA_VERSION=25.1.1 
+    export REDPANDA_CONSOLE_VERSION=3.0.0
+    # 或根據你的 docker-compose.yml 設定
+    ```
+3.  **分別啟動應用**：
+    *   啟動 `listener` 應用：
+        ```bash
+        cd listener
+        mvn spring-boot:run 
+        ```
+    *   啟動 `listener1` 應用：
+        ```bash
+        cd ../listener1
+        mvn spring-boot:run
+        ```
+    *   啟動 `restapi` 應用：
+        ```bash
+        cd ../restapi
+        mvn spring-boot:run
+        ```
+4.  **發送請求**：使用 curl 或其他工具向 `restapi` 的端點發送請求，例如：
+    ```bash
+    curl -X POST http://localhost:8080/calculate -H "Content-Type: application/json" -d '{"base": 2.0, "exponent": 10.0}'
+    ```
+    預期會得到 `Math.sqrt(Math.pow(2.0, 10.0))` 的結果 (即 32.0)。
+
+
+### 相關技術與參考
+
+*   **Spring Kafka:** [官方文件](https://docs.spring.io/spring-kafka/reference/index.html)
+*   **ReplyingKafkaTemplate:** 用於實現同步請求-回應。
+*   **@KafkaListener & @SendTo:** 監聽 Topic 並回覆消息。
+*   **Message Headers:** 使用 `KafkaHeaders.REPLY_TOPIC` 和 `KafkaHeaders.CORRELATION_ID` 進行路由和請求匹配。
+
+<!-- Keep existing references if relevant -->
 ### 其他相關文章
 
 - [Synchronous Kafka: Using Spring Request-Reply](https://dzone.com/articles/synchronous-kafka-using-spring-request-reply-1)
 - [Synchronous Communication With Apache Kafka Using ReplyingKafkaTemplate](https://www.baeldung.com/spring-kafka-request-reply-synchronous)
+- [Spring Kafka: Configure Multiple Listeners on Same Topic](https://www.baeldung.com/spring-kafka-multiple-listeners-same-topic)
