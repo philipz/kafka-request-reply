@@ -2,6 +2,9 @@
 
 本專案展示如何使用 Spring Kafka 實現一個涉及多個處理階段的同步請求-回應 (Request-Reply) 通訊模式。
 
+### 專案概觀
+[系統文件 by Deepwiki](./wiki/1-overview.html)
+
 ### 核心概念
 
 在傳統的同步請求-回應模式中，客戶端發送請求，服務端處理並直接回應。此專案將其擴展，引入了中間處理步驟：
@@ -80,7 +83,7 @@
 *   **@KafkaListener & @SendTo:** 監聽 Topic 並回覆消息。
 *   **Message Headers:** 使用 `KafkaHeaders.REPLY_TOPIC` 和 `KafkaHeaders.CORRELATION_ID` 進行路由和請求匹配。
 
-<!-- Keep existing references if relevant -->
+
 ### 其他相關文章
 
 - [Synchronous Kafka: Using Spring Request-Reply](https://dzone.com/articles/synchronous-kafka-using-spring-request-reply-1)
